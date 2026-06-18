@@ -1,11 +1,13 @@
 import Razorpay from "razorpay";
 import crypto from "crypto";
 
-// Server-side Razorpay instance
-export const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID!,
-  key_secret: process.env.RAZORPAY_KEY_SECRET!,
-});
+// Server-side Razorpay instance (lazy initialization to avoid build errors on Vercel)
+export const razorpay = process.env.RAZORPAY_KEY_ID
+  ? new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET!,
+    })
+  : (null as unknown as Razorpay);
 
 /**
  * Create a Razorpay order.
