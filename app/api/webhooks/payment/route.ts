@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/server";
 import { verifyWebhookSignature } from "@/lib/razorpay";
 import { sendOrderConfirmationEmail } from "@/lib/resend";
+import { createShiprocketOrder } from "@/lib/shiprocket";
 import type { OrderWithItems } from "@/types";
 
 // IMPORTANT: Disable body parsing to preserve raw body for HMAC verification
@@ -159,6 +160,37 @@ export async function POST(request: NextRequest) {
       } catch (emailError) {
         // Log but don't fail the webhook — order is already marked paid
         console.error("[webhook] Email send failed:", emailError);
+      }
+    }
+
+    // 11. Create Shiprocket shipment — runs after email to keep webhook fast
+    if (fullOrder && userData?.user?.email) {
+      try {
+        const { data: profile } = await serviceSupabase
+          .from("profiles")
+          .select("full_name, phone")
+          .eq("id", existingOrder.user_id)
+          .single();
+
+        const shiprocketResult = await createShiprocketOrder(
+          fullOrder as unknown as OrderWithItems,
+          profile?.full_name ?? null,
+          userData.user.email,
+          profile?.phone ?? null
+        );
+
+        // Store the Shiprocket shipment_id as the tracking reference on the order
+        await serviceSupabase
+          .from("orders")
+          .update({ tracking_id: String(shiprocketResult.shipment_id) })
+          .eq("id", existingOrder.id);
+
+        console.log(
+          `[webhook] Shiprocket shipment created → shipment_id: ${shiprocketResult.shipment_id}`
+        );
+      } catch (shiprocketError) {
+        // Log but never fail the webhook — payment is confirmed, shipping can be retried
+        console.error("[webhook] Shiprocket order creation failed:", shiprocketError);
       }
     }
 
