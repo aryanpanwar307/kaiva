@@ -84,7 +84,7 @@ export default async function HomePage() {
       <section className="relative w-full min-h-[90vh] flex items-center justify-center overflow-hidden bg-[#F3EFEC]">
         {/* Background image */}
         <Image
-          src="https://images.unsplash.com/photo-1601121141461-9d6647bef0a1?w=1800&q=80&auto=format&fit=crop"
+          src="/gemini-hero.png"
           alt="KAIVA artisanal jewelry editorial"
           fill
           priority
