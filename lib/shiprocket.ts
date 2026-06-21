@@ -142,7 +142,7 @@ export async function createShiprocketOrder(
     billing_state: addr.state,
     billing_country: addr.country || "India",
     billing_email: customerEmail,
-    billing_phone: customerPhone ?? "0000000000",
+    billing_phone: customerPhone ?? "9876543210",
 
     // Ship to same address
     shipping_is_billing: true,
