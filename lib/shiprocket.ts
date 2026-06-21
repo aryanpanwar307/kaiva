@@ -207,7 +207,7 @@ export async function getTrackingInfo(
   const token = await getToken();
 
   const res = await fetch(
-    `${SHIPROCKET_BASE}/courier/track/awb/${trackingId}`,
+    `${SHIPROCKET_BASE}/courier/track/shipment/${trackingId}`,
     {
       headers: { Authorization: `Bearer ${token}` },
       // Revalidate every 60 seconds on Vercel edge cache
