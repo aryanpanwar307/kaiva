@@ -84,51 +84,59 @@ export function ProductCard({ product }: ProductCardProps) {
         )}
       </div>
 
-      {/* ─── Product Info ─── */}
-      <div className="pt-4 text-center">
+      {/* ─── Product Info — fixed height so all cards align ─── */}
+      <div className="pt-4 text-center flex flex-col">
         {/* Category label */}
         <p className="font-sans text-[9px] uppercase tracking-[0.2em] text-[#6B6B6B] mb-1.5">
           {categoryLabel(product.category)}
         </p>
 
-        {/* Title — serif */}
-        <h3 className="font-serif text-sm text-[#2A2A2A] leading-snug line-clamp-2 mb-2 group-hover:text-[#C5A059] transition-colors duration-150">
+        {/* Title — always exactly 2 lines tall */}
+        <h3
+          className="font-serif text-sm text-[#2A2A2A] leading-snug line-clamp-2 group-hover:text-[#C5A059] transition-colors duration-150 mb-2"
+          style={{ minHeight: "2.6em" }} /* reserves space for 2 lines always */
+        >
           {product.title}
         </h3>
 
-        {/* Color swatches */}
-        {product.product_skus && product.product_skus.length > 1 && (
-          <div className="flex gap-1.5 justify-center mb-2.5">
-            {product.product_skus.slice(0, 4).map((sku) => (
-              <div
-                key={sku.id}
-                title={sku.color}
-                className="h-2.5 w-2.5 rounded-full border border-[#E0DEDA]"
-                style={{
-                  backgroundColor:
-                    sku.color.toLowerCase() === "gold"       ? "#C5A059" :
-                    sku.color.toLowerCase() === "silver"     ? "#B8B8B8" :
-                    sku.color.toLowerCase() === "rose gold"  ? "#C2857C" :
-                    sku.color.toLowerCase() === "black"      ? "#2A2A2A" :
-                    sku.color.toLowerCase() === "white"      ? "#F0F0F0" :
-                    "#999",
-                }}
-              />
-            ))}
-            {product.product_skus.length > 4 && (
-              <span className="font-sans text-[10px] text-[#6B6B6B] self-center">
-                +{product.product_skus.length - 4}
-              </span>
-            )}
-          </div>
-        )}
+        {/* Color swatches — always rendered; invisible placeholder when only 1 variant */}
+        <div className="flex gap-1.5 justify-center mb-2.5" style={{ minHeight: "14px" }}>
+          {product.product_skus && product.product_skus.length > 1 ? (
+            <>
+              {product.product_skus.slice(0, 4).map((sku) => (
+                <div
+                  key={sku.id}
+                  title={sku.color}
+                  className="h-2.5 w-2.5 rounded-full border border-[#E0DEDA]"
+                  style={{
+                    backgroundColor:
+                      sku.color.toLowerCase() === "gold"      ? "#C5A059" :
+                      sku.color.toLowerCase() === "silver"    ? "#B8B8B8" :
+                      sku.color.toLowerCase() === "rose gold" ? "#C2857C" :
+                      sku.color.toLowerCase() === "black"     ? "#2A2A2A" :
+                      sku.color.toLowerCase() === "white"     ? "#F0F0F0" :
+                      "#999",
+                  }}
+                />
+              ))}
+              {product.product_skus.length > 4 && (
+                <span className="font-sans text-[10px] text-[#6B6B6B] self-center">
+                  +{product.product_skus.length - 4}
+                </span>
+              )}
+            </>
+          ) : (
+            /* invisible spacer — keeps price at same Y when no swatches */
+            <span aria-hidden="true" />
+          )}
+        </div>
 
-        {/* Price — centered */}
+        {/* Price */}
         <p className="font-sans text-sm text-[#2A2A2A] font-medium mb-3">
           {formatPrice(product.base_price)}
         </p>
 
-        {/* Add to Cart — ghost button, full width */}
+        {/* Add to Cart */}
         <button
           id={`quick-add-${product.id}`}
           onClick={handleAddToCart}
