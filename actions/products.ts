@@ -177,13 +177,18 @@ export async function createProduct(
   // Insert SKUs
   if (formData.skus.length > 0) {
     const { error: skuError } = await supabase.from("product_skus").insert(
-      formData.skus.map((sku) => ({
-        product_id: product.id,
-        color: sku.color,
-        stock_quantity: sku.stock_quantity,
-        sku_image_url: sku.sku_image_url,
-        price_modifier: sku.price_modifier,
-      }))
+      formData.skus.map((sku) => {
+        // sku_image_urls is the source of truth; sku_image_url is the first image for backward compat
+        const urls = sku.sku_image_urls.filter(Boolean);
+        return {
+          product_id: product.id,
+          color: sku.color,
+          stock_quantity: sku.stock_quantity,
+          sku_image_urls: urls,
+          sku_image_url: urls[0] ?? sku.sku_image_url ?? null,
+          price_modifier: sku.price_modifier,
+        };
+      })
     );
 
     if (skuError) {

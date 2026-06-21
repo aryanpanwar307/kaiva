@@ -2,7 +2,7 @@
 
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Upload, Loader2 } from "lucide-react";
+import { Plus, Trash2, Upload, Loader2, X, ImageIcon } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { createProduct } from "@/actions/products";
@@ -14,6 +14,7 @@ import type {
   ProductFormData,
 } from "@/types";
 import { toast } from "sonner";
+import Image from "next/image";
 
 const CATEGORIES: ProductCategory[] = ["necklace", "handband", "earring", "ring", "anklet"];
 const THEMES: LifestyleTheme[] = ["daily_wear", "travel", "beach_trip", "date_night"];
@@ -22,6 +23,7 @@ const defaultSku = (): SkuInput => ({
   color: "",
   stock_quantity: 1,
   sku_image_url: "",
+  sku_image_urls: [],
   price_modifier: 0,
 });
 
@@ -34,8 +36,9 @@ export function ProductForm() {
   const [category, setCategory] = useState<ProductCategory>("necklace");
   const [themes, setThemes] = useState<LifestyleTheme[]>([]);
   const [skus, setSkus] = useState<SkuInput[]>([defaultSku()]);
-  const [uploadingSkuIndex, setUploadingSkuIndex] = useState<number | null>(null);
-  const fileInputRefs = useRef<(HTMLInputElement | null)[]>([]);
+  // Track which (skuIndex, imageSlot) is currently uploading
+  const [uploading, setUploading] = useState<string | null>(null);
+  const fileInputRefs = useRef<Map<string, HTMLInputElement>>(new Map());
 
   const toggleTheme = (theme: LifestyleTheme) => {
     setThemes((prev) =>
@@ -45,47 +48,77 @@ export function ProductForm() {
 
   const addSku = () => setSkus((prev) => [...prev, defaultSku()]);
   const removeSku = (i: number) => setSkus((prev) => prev.filter((_, idx) => idx !== i));
-  const updateSku = (i: number, field: keyof SkuInput, value: string | number) => {
+  const updateSku = (i: number, field: keyof SkuInput, value: string | number | string[]) => {
     setSkus((prev) => prev.map((s, idx) => (idx === i ? { ...s, [field]: value } : s)));
   };
 
-  const handleImageUpload = async (skuIndex: number, file: File) => {
-    setUploadingSkuIndex(skuIndex);
-    try {
-      // 1. Get signed params from our secure endpoint
-      const signRes = await fetch("/api/cloudinary/sign", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ folder: "kaiva/products" }),
-      });
+  // Upload a single image to Cloudinary and return its secure URL
+  const uploadToCloudinary = async (file: File): Promise<string> => {
+    const signRes = await fetch("/api/cloudinary/sign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ folder: "kaiva/products" }),
+    });
+    if (!signRes.ok) throw new Error("Failed to get upload signature");
+    const signData = await signRes.json();
 
-      if (!signRes.ok) throw new Error("Failed to get upload signature");
-      const signData = await signRes.json();
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("api_key", signData.api_key);
+    formData.append("timestamp", signData.timestamp);
+    formData.append("signature", signData.signature);
+    formData.append("folder", signData.folder);
 
-      // 2. Upload directly to Cloudinary with signed params
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("api_key", signData.api_key);
-      formData.append("timestamp", signData.timestamp);
-      formData.append("signature", signData.signature);
-      formData.append("folder", signData.folder);
+    const uploadRes = await fetch(
+      `https://api.cloudinary.com/v1_1/${signData.cloud_name}/image/upload`,
+      { method: "POST", body: formData }
+    );
+    if (!uploadRes.ok) throw new Error("Upload failed");
+    const uploadData = await uploadRes.json();
+    return uploadData.secure_url as string;
+  };
 
-      const uploadRes = await fetch(
-        `https://api.cloudinary.com/v1_1/${signData.cloud_name}/image/upload`,
-        { method: "POST", body: formData }
-      );
-
-      if (!uploadRes.ok) throw new Error("Upload failed");
-      const uploadData = await uploadRes.json();
-
-      updateSku(skuIndex, "sku_image_url", uploadData.secure_url);
-      toast.success("Image uploaded successfully");
-    } catch (err) {
-      console.error("Upload error:", err);
-      toast.error("Image upload failed");
-    } finally {
-      setUploadingSkuIndex(null);
+  const handleAddImages = async (skuIndex: number, files: FileList) => {
+    const fileArr = Array.from(files);
+    for (let j = 0; j < fileArr.length; j++) {
+      const key = `${skuIndex}-${j}`;
+      setUploading(key);
+      try {
+        const url = await uploadToCloudinary(fileArr[j]);
+        setSkus((prev) =>
+          prev.map((s, idx) => {
+            if (idx !== skuIndex) return s;
+            const newUrls = [...s.sku_image_urls, url];
+            return {
+              ...s,
+              sku_image_urls: newUrls,
+              // keep sku_image_url in sync with first image
+              sku_image_url: newUrls[0] ?? s.sku_image_url,
+            };
+          })
+        );
+        toast.success(`Image ${j + 1} of ${fileArr.length} uploaded`);
+      } catch (err) {
+        console.error("Upload error:", err);
+        toast.error(`Failed to upload image ${j + 1}`);
+      } finally {
+        setUploading(null);
+      }
     }
+  };
+
+  const removeImage = (skuIndex: number, imgIndex: number) => {
+    setSkus((prev) =>
+      prev.map((s, idx) => {
+        if (idx !== skuIndex) return s;
+        const newUrls = s.sku_image_urls.filter((_, i) => i !== imgIndex);
+        return {
+          ...s,
+          sku_image_urls: newUrls,
+          sku_image_url: newUrls[0] ?? "",
+        };
+      })
+    );
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -109,7 +142,6 @@ export function ProductForm() {
         themes,
         skus,
       };
-
       const result = await createProduct(formData);
       if (result.success) {
         toast.success("Product created successfully!");
@@ -117,7 +149,7 @@ export function ProductForm() {
       } else {
         toast.error(result.error ?? "Failed to create product");
       }
-    } catch (err) {
+    } catch {
       toast.error("Unexpected error");
     } finally {
       setLoading(false);
@@ -129,7 +161,6 @@ export function ProductForm() {
       {/* Basic Info */}
       <div className="bg-card border border-border rounded-xl p-6 space-y-5">
         <h2 className="font-semibold text-foreground">Product Details</h2>
-
         <Input
           id="product-title"
           label="Title *"
@@ -217,15 +248,19 @@ export function ProductForm() {
           </button>
         </div>
 
-        <div className="space-y-4">
+        <div className="space-y-5">
           {skus.map((sku, i) => (
             <div
               key={i}
-              className="border border-border rounded-xl p-4 space-y-4 relative"
+              className="border border-border rounded-xl p-5 space-y-5 relative"
             >
+              {/* Variant header */}
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-muted-foreground">
+                <span className="text-sm font-semibold text-foreground">
                   Variant #{i + 1}
+                  {sku.color && (
+                    <span className="ml-2 text-gold font-normal">— {sku.color}</span>
+                  )}
                 </span>
                 {skus.length > 1 && (
                   <button
@@ -239,6 +274,7 @@ export function ProductForm() {
                 )}
               </div>
 
+              {/* Color + Stock */}
               <div className="grid grid-cols-2 gap-4">
                 <Input
                   id={`sku-color-${i}`}
@@ -253,7 +289,9 @@ export function ProductForm() {
                   type="number"
                   min="0"
                   value={sku.stock_quantity}
-                  onChange={(e) => updateSku(i, "stock_quantity", parseInt(e.target.value) || 0)}
+                  onChange={(e) =>
+                    updateSku(i, "stock_quantity", parseInt(e.target.value) || 0)
+                  }
                 />
               </div>
 
@@ -264,60 +302,112 @@ export function ProductForm() {
                 step="0.01"
                 placeholder="0 (adds to base price)"
                 value={sku.price_modifier}
-                onChange={(e) => updateSku(i, "price_modifier", parseFloat(e.target.value) || 0)}
+                onChange={(e) =>
+                  updateSku(i, "price_modifier", parseFloat(e.target.value) || 0)
+                }
               />
 
-              {/* Image upload */}
+              {/* ── Multi-image upload ── */}
               <div>
-                <label className="text-xs font-medium text-muted-foreground uppercase tracking-widest block mb-2">
-                  Product Image
-                </label>
-                {sku.sku_image_url ? (
-                  <div className="flex items-center gap-3">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={sku.sku_image_url}
-                      alt="Uploaded"
-                      className="h-16 w-16 rounded-lg object-cover border border-border"
-                    />
-                    <div>
-                      <p className="text-xs text-emerald-400 font-medium">✓ Uploaded</p>
-                      <button
-                        type="button"
-                        onClick={() => updateSku(i, "sku_image_url", "")}
-                        className="text-xs text-muted-foreground hover:text-destructive mt-1 transition-colors"
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <div>
-                    <input
-                      ref={(el) => { fileInputRefs.current[i] = el; }}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleImageUpload(i, file);
-                      }}
-                    />
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+                    Product Images
+                    <span className="ml-1.5 normal-case text-muted-foreground/60">
+                      ({sku.sku_image_urls.length} uploaded · first image is the cover)
+                    </span>
+                  </label>
+                  {/* Hidden multi-file input */}
+                  <input
+                    ref={(el) => {
+                      if (el) fileInputRefs.current.set(`${i}`, el);
+                    }}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files?.length) {
+                        handleAddImages(i, e.target.files);
+                        e.target.value = ""; // reset so same file can be re-added
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    id={`upload-image-${i}`}
+                    onClick={() => fileInputRefs.current.get(`${i}`)?.click()}
+                    disabled={!!uploading}
+                    className="flex items-center gap-2 px-3 py-1.5 border border-dashed border-gold/40 rounded-lg text-xs text-gold hover:border-gold hover:bg-gold/5 transition-all disabled:opacity-50"
+                  >
+                    {uploading?.startsWith(`${i}-`) ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <Upload className="h-3.5 w-3.5" />
+                    )}
+                    {uploading?.startsWith(`${i}-`) ? "Uploading..." : "Add Images"}
+                  </button>
+                </div>
+
+                {/* Image grid */}
+                {sku.sku_image_urls.length > 0 ? (
+                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                    {sku.sku_image_urls.map((url, imgIdx) => (
+                      <div key={imgIdx} className="relative group aspect-square">
+                        <div
+                          className={`relative h-full w-full rounded-lg overflow-hidden border-2 transition-all ${
+                            imgIdx === 0
+                              ? "border-gold shadow-sm"
+                              : "border-border"
+                          }`}
+                        >
+                          <Image
+                            src={url}
+                            alt={`Variant ${i + 1} image ${imgIdx + 1}`}
+                            fill
+                            className="object-cover"
+                            sizes="100px"
+                          />
+                          {/* Cover badge */}
+                          {imgIdx === 0 && (
+                            <span className="absolute bottom-0 left-0 right-0 bg-gold/80 text-[#0a0a0a] text-[9px] font-bold text-center py-0.5 uppercase tracking-wider">
+                              Cover
+                            </span>
+                          )}
+                        </div>
+                        {/* Remove button */}
+                        <button
+                          type="button"
+                          onClick={() => removeImage(i, imgIdx)}
+                          className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md"
+                          aria-label="Remove image"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+
+                    {/* Placeholder add-more slot */}
                     <button
                       type="button"
-                      id={`upload-image-${i}`}
-                      onClick={() => fileInputRefs.current[i]?.click()}
-                      disabled={uploadingSkuIndex === i}
-                      className="flex items-center gap-2 px-4 py-2.5 border border-dashed border-border rounded-lg text-sm text-muted-foreground hover:border-gold/40 hover:text-foreground transition-all"
+                      onClick={() => fileInputRefs.current.get(`${i}`)?.click()}
+                      disabled={!!uploading}
+                      className="aspect-square rounded-lg border-2 border-dashed border-border flex flex-col items-center justify-center text-muted-foreground hover:border-gold/40 hover:text-gold transition-all disabled:opacity-50"
                     >
-                      {uploadingSkuIndex === i ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <Upload className="h-4 w-4" />
-                      )}
-                      {uploadingSkuIndex === i ? "Uploading..." : "Upload Image"}
+                      <Plus className="h-4 w-4" />
                     </button>
                   </div>
+                ) : (
+                  /* Empty state — large drop zone */
+                  <button
+                    type="button"
+                    onClick={() => fileInputRefs.current.get(`${i}`)?.click()}
+                    disabled={!!uploading}
+                    className="w-full flex flex-col items-center justify-center gap-2 py-8 border-2 border-dashed border-border rounded-xl text-muted-foreground hover:border-gold/40 hover:text-foreground transition-all disabled:opacity-50"
+                  >
+                    <ImageIcon className="h-8 w-8 opacity-40" />
+                    <span className="text-sm">Click to upload images</span>
+                    <span className="text-xs opacity-60">You can select multiple at once</span>
+                  </button>
                 )}
               </div>
             </div>

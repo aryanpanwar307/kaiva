@@ -30,8 +30,8 @@ export function AuthForm() {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
         toast.success("Welcome back!");
-        router.push(redirectTo);
         router.refresh();
+        router.push(redirectTo === "/" ? "/account" : redirectTo);
       } else {
         const { error } = await supabase.auth.signUp({
           email,

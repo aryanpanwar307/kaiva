@@ -20,6 +20,7 @@ export function ProductDetail({ product, initialWishlisted }: ProductDetailProps
   const [selectedSku, setSelectedSku] = useState<ProductSku>(
     product.product_skus[0]
   );
+  const [galleryKey, setGalleryKey] = useState(0); // increment to reset gallery on variant change
   const [addedToCart, setAddedToCart] = useState(false);
   const { addItem, openCart } = useCartStore();
   const { isWishlisted, addToWishlist, removeFromWishlist } = useWishlistStore();
@@ -30,10 +31,20 @@ export function ProductDetail({ product, initialWishlisted }: ProductDetailProps
     inStock && selectedSku.stock_quantity <= 5;
   const unitPrice = product.base_price + selectedSku.price_modifier;
 
-  const images = product.product_skus.map((s) => s.sku_image_url).filter(Boolean) as string[];
-  const selectedImages = selectedSku.sku_image_url
-    ? [selectedSku.sku_image_url, ...images.filter((i) => i !== selectedSku.sku_image_url)]
-    : images;
+  // Resolve images for the currently selected variant:
+  // prefer sku_image_urls (multi-image); fall back to sku_image_url (legacy single)
+  const selectedImages: string[] = (
+    selectedSku.sku_image_urls?.length
+      ? selectedSku.sku_image_urls
+      : selectedSku.sku_image_url
+      ? [selectedSku.sku_image_url]
+      : []
+  ).filter(Boolean);
+
+  const handleSelectSku = (sku: ProductSku) => {
+    setSelectedSku(sku);
+    setGalleryKey((k) => k + 1); // triggers gallery reset to image 0
+  };
 
   const handleAddToCart = () => {
     if (!inStock) return;
@@ -55,8 +66,8 @@ export function ProductDetail({ product, initialWishlisted }: ProductDetailProps
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 max-w-7xl mx-auto px-4 sm:px-6 py-12">
-      {/* Gallery */}
-      <ImageGallery images={selectedImages} productTitle={product.title} />
+      {/* Gallery — key resets internal activeIndex when variant changes */}
+      <ImageGallery key={galleryKey} images={selectedImages} productTitle={product.title} />
 
       {/* Details */}
       <div className="space-y-6">
@@ -113,7 +124,7 @@ export function ProductDetail({ product, initialWishlisted }: ProductDetailProps
                 <button
                   key={sku.id}
                   id={`sku-select-${sku.id}`}
-                  onClick={() => setSelectedSku(sku)}
+                  onClick={() => handleSelectSku(sku)}
                   disabled={sku.stock_quantity === 0}
                   className={cn(
                     "px-4 py-2 rounded-full border text-sm font-medium transition-all duration-150",

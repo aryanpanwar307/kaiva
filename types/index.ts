@@ -56,7 +56,8 @@ export interface ProductSku {
   product_id: string;
   color: string;
   stock_quantity: number;
-  sku_image_url: string | null;
+  sku_image_url: string | null;       // primary/thumbnail image (legacy)
+  sku_image_urls: string[];           // all images for this variant
   price_modifier: number;
   created_at: string;
   updated_at: string;
@@ -170,7 +171,8 @@ export interface ShiprocketTrackingResponse {
 export interface SkuInput {
   color: string;
   stock_quantity: number;
-  sku_image_url: string;
+  sku_image_url: string;              // primary image (first of the array)
+  sku_image_urls: string[];           // all images
   price_modifier: number;
 }
 
